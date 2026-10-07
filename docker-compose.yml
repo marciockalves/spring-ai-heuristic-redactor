@@ -6,7 +6,7 @@ services:
     container_name: heuristic-redactor
     restart: always
     environment:
-      POSTGRES_DB: medical_agent_db
+      POSTGRES_DB: heuristic-redactor
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
