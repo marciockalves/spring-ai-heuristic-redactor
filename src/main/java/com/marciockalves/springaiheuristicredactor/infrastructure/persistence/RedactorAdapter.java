@@ -13,7 +13,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class RedactorAdapter  implements RedactorPort {
 
-    private final Redactor repository;
+
     private final RedactorRepository redactorRepository;
 
     @Override
