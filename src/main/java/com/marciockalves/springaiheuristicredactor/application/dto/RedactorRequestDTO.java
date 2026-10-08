@@ -20,7 +20,6 @@ public class RedactorRequestDTO {
     @NotBlank(message = "O título da redação é obrigatório.")
     private String title;
 
-    @NotBlank(message = "O texto original é obrigatório.")
     private String contentText;
 
     @NotNull(message = "O estilo de redação (ModelRedactor) deve ser informado.")
