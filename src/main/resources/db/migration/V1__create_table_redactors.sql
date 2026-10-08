@@ -1,6 +1,6 @@
 CREATE TABLE redactors (
                            id UUID PRIMARY KEY,
-                           title VARCHAR(255) NOT NULL,
+                           title TEXT NOT NULL,
                            username VARCHAR(255) NOT NULL,
                            version INT NOT NULL,
                            model_redactor VARCHAR(50) NOT NULL,

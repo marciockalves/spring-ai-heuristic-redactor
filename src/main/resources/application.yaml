@@ -8,6 +8,12 @@ server:
 logging:
   level:
     root: INFO
+    org.springframework.ai: DEBUG
+    org.springframework.web.client.RestClient: INFO
+    org.springframework.http.client.support: DEBUG
+    org.springframework.ai.chat.client.advisor: INFO
+    org.springframework.ai.chat.memory: INFO
+    org.springframework.ai.chat.metadata: WARN
 
 spring:
   application:

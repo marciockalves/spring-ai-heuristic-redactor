@@ -9,11 +9,7 @@ import java.util.UUID;
 
 public interface RedactorPort{
 
-    List<Redactor> findAll();
-    List<Redactor> findById(UUID id);
-    List<Redactor> findByUserName(String userName);
-    List<Redactor> findByUserNameAndTitle(String userName, String title);
-    List<Redactor> findByUserNameAndModelRedactor(String userName, ModelRedactor modelRedactor);
-    Redactor save(Redactor redactor);
+    void save(Redactor redactor);
+
 
 }

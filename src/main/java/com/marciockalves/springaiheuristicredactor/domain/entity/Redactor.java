@@ -23,7 +23,7 @@ public class Redactor {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "title",  nullable = false)
+    @Column(name = "title", columnDefinition = "TEXT", nullable = false)
     private String title;
 
     @Column(name = "user_name", nullable = false)
@@ -40,7 +40,7 @@ public class Redactor {
     @Enumerated(EnumType.STRING)
     private ModelTarget modelTarget;
 
-    @Column(name = "text_redacted", nullable = false)
+    @Column(name = "text_redacted", columnDefinition = "TEXT",  nullable = false)
     private String textRedacted;
 
     @CreationTimestamp

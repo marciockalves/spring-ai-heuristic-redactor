@@ -2,73 +2,96 @@ package com.marciockalves.springaiheuristicredactor.application.usecase;
 
 import com.marciockalves.springaiheuristicredactor.application.dto.RedactorRequestDTO;
 import com.marciockalves.springaiheuristicredactor.domain.enums.ModelRedactor;
-import com.marciockalves.springaiheuristicredactor.domain.enums.ModelTarget;
-import lombok.extern.slf4j.Slf4j;
+import com.marciockalves.springaiheuristicredactor.infrastructure.tool.RedactorTools;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.Map;
-import java.util.Optional;
 
-@Slf4j
 @Service
 public class RedactorUseCase {
 
-    private final Map<ModelRedactor, Resource> promptTemplateStrategy;
-    private final ChatClient chatClient;
+    private static final Logger log = LoggerFactory.getLogger(RedactorUseCase.class);
 
-    public RedactorUseCase(Map<ModelRedactor, Resource> promptTemplateStrategy, ChatClient.Builder chatClientBuilder) {
+    private final ChatClient chatClient;
+    private final Map<ModelRedactor, Resource> promptTemplateStrategy;
+    private final RedactorTools redactorTools;
+
+    public RedactorUseCase(ChatClient.Builder chatClientBuilder,
+                           Map<ModelRedactor, Resource> promptTemplateStrategy,
+                           RedactorTools redactorTools,
+                           ChatMemory chatMemory) {
+        this.chatClient = chatClientBuilder
+                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+                .build();
         this.promptTemplateStrategy = promptTemplateStrategy;
-        // Constrói o ChatClient padrão configurado pelo Spring AI Ollama no application.yaml
-        this.chatClient = chatClientBuilder.build();
+        this.redactorTools = redactorTools;
     }
 
-    public String execute(RedactorRequestDTO request) {
-        log.info("==================================================");
-        log.info(" [COOKBOOK] Iniciando processamento de redação com IA...");
-        log.info("--------------------------------------------------");
-        log.info(" Autor / Usuário     : {}", request.getUsername());
-        log.info(" Título              : {}", request.getTitle());
-        log.info(" Estilo Selecionado  : {}", request.getModelRedactor());
+    public Flux<String> execute(RedactorRequestDTO request) {
+        log.info("Iniciando processo de redação para o usuário: {} usando o modelo: {}",
+                request.getUsername(), request.getModelRedactor());
 
-        boolean hasOrientation = Optional.ofNullable(request.getOrientation())
-                .map(s -> !s.isBlank())
-                .orElse(false);
+        boolean hasText = request.getContentText() != null && !request.getContentText().isBlank();
+        boolean hasOrientation = request.getOrientation() != null && !request.getOrientation().isBlank();
 
-        ModelTarget targetMode = hasOrientation ? ModelTarget.ORIENTED : ModelTarget.DRAFT;
-        log.info(" Modo Detectado      : {}", targetMode);
-
-        String orientationValue = hasOrientation ? request.getOrientation() : "Nenhuma orientação extra fornecida. Atue em modo rascunho livre.";
-
-        // 1. Recupera o Resource do Strategy Pattern
-        Resource promptResource = promptTemplateStrategy.get(request.getModelRedactor());
-        if (promptResource == null) {
-            throw new IllegalArgumentException("Nenhum template encontrado para o estilo: " + request.getModelRedactor());
+        if (!hasText && !hasOrientation) {
+            log.warn("Tentativa de requisição rejeitada: tanto o texto quanto a orientação estão vazios.");
+            return Flux.error(new IllegalArgumentException("Você precisa fornecer um texto (contentText) ou uma orientação (orientation)."));
         }
 
-        log.info(" Template Carregado  : filename = {}", promptResource.getFilename());
-        log.info(" Texto Original      : {}", request.getContentText());
+        Resource templateResource = promptTemplateStrategy.get(request.getModelRedactor());
 
-        // 2. Cria o PromptTemplate do Spring AI combinando o arquivo .st externo e as variáveis
-        PromptTemplate promptTemplate = new PromptTemplate(promptResource);
-        Prompt prompt = promptTemplate.create(Map.of(
-                "text", request.getContentText(),
-                "orientation", orientationValue
-        ));
+        if (templateResource == null) {
+            log.error("Modelo de redator não mapeado: {}", request.getModelRedactor());
+            return Flux.error(new IllegalArgumentException("Modelo de redator não mapeado: " + request.getModelRedactor()));
+        }
 
-        log.info(" Enviando prompt para o modelo Ollama...");
+        String chatId = request.getUsername() != null ? request.getUsername() : "default-user";
 
-        // 3. Executa a chamada ao LLM e captura o texto gerado
-        String redactedContent = chatClient.prompt(prompt)
-                .call()
-                .content();
+        String contentToProcess = hasText ? request.getContentText() : "[Usar contexto anterior da memória]";
+        String orientation = hasOrientation ? request.getOrientation() : "Padrão";
+        String userMessage = hasOrientation ? request.getOrientation() : "Aplique as modificações necessárias.";
+        String determinedCategory = hasOrientation
+                ? "ORIENTED"
+                : "DRAFT";
 
-        log.info(" Resposta gerada com sucesso pela IA!");
-        log.info("==================================================");
+        Map<String, Object> toolContextMap = Map.of(
+                "userName", request.getUsername() != null ? request.getUsername() : "default-user",
+                "title", request.getTitle() != null ? request.getTitle() : "Sem Título",
+                "category", determinedCategory,
+                "modelRedactorStr", request.getModelRedactor().name()
+        );
 
-        return redactedContent;
+
+        return chatClient.prompt()
+                .system(promptSpec -> promptSpec
+                        .text(templateResource)
+                        .param("contentText", contentToProcess)
+                        .param("orientation", orientation)
+                )
+                .user(userMessage)
+                .tools(redactorTools)
+                // Força ou instrui o modelo a utilizar a ferramenta de salvamento quando concluir
+                .toolContext(toolContextMap)
+                .advisors(advisorSpec -> advisorSpec.param("chat_memory_conversation_id", chatId))
+                .stream()
+                .content()
+                .doOnSubscribe(subscription -> log.info("🔌 Conexão com o provedor de IA estabelecida."))
+                .collectList()
+                .doOnSuccess(chunksList -> {
+                    String respostaCompleta = String.join("", chunksList);
+                    log.info("📝 [RESPOSTA COMPLETA DA IA]:\n--------------------\n{}\n--------------------", respostaCompleta);
+                })
+                .flatMapMany(Flux::fromIterable)
+                .doOnError(error -> log.error("❌ Erro no stream da IA: ", error))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 }
