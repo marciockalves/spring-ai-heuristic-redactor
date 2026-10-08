@@ -21,14 +21,14 @@ public class DefaultSaveRedactorStrategy implements SaveRedactorStrategy {
     @Override
     @Transactional
     public void execute(String finalContent, String category, String userName, String title, String modelRedactorStr) {
-        try {
 
+        if (finalContent == null || finalContent.isBlank()) {
+            throw new IllegalArgumentException("O conteúdo redigido não pode ser nulo ou vazio para salvamento.");
+        }
+
+        try {
             ModelRedactor modelRedactor = ModelRedactor.safeValueOf(modelRedactorStr);
             ModelTarget modelTarget = ModelTarget.safeValueOf(category);
-
-
-            log.info("Persistindo no banco -> Usuário: [{}] | Título: [{}] | ModelRedactor: [{}] | ModelTarget: [{}]",
-                    userName, title, modelRedactor, modelTarget);
 
             Redactor redactor = Redactor.builder()
                     .textRedacted(finalContent)
@@ -38,13 +38,11 @@ public class DefaultSaveRedactorStrategy implements SaveRedactorStrategy {
                     .modelTarget(modelTarget)
                     .build();
 
-
             redactorPort.save(redactor);
-
-            log.info("Texto redigido salvo com sucesso no banco de dados!");
+            log.info("✨ [STRATEGY] Texto salvo com sucesso no banco de dados!");
 
         } catch (Exception e) {
-            log.error("Erro ao persistir o texto redigido: ", e);
+            log.error("❌ Erro ao persistir o texto redigido: ", e);
             throw new RuntimeException("Erro ao persistir o texto redigido: " + e.getMessage(), e);
         }
     }
